@@ -9,6 +9,10 @@ class RedshiftOutput < BufferedOutput
   # ignore load table error. (invalid data format)
   IGNORE_REDSHIFT_ERROR_REGEXP = /^ERROR:  Load into table '[^']+' failed\./
 
+  unless method_defined?(:log)
+    define_method('log') { $log }
+  end
+
   def initialize
     super
     require 'aws-sdk-v1'
@@ -109,7 +113,7 @@ DESC
       connect_timeout: @redshift_connect_timeout
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
-    $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
+    log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
     @table_name_with_schema = [@redshift_schemaname, @redshift_tablename].compact.join('.')
     @redshift_copy_columns = if !@redshift_copy_columns.to_s.empty?
                                @redshift_copy_columns.split(/[,\s]+/)
@@ -148,7 +152,7 @@ DESC
   end
 
   def write(chunk)
-    $log.debug format_log("start creating gz.")
+    log.debug format_log("start creating gz.")
     @maintenance_monitor.check_maintenance!
 
     # create a gz file
@@ -162,7 +166,7 @@ DESC
 
     # no data -> skip
     unless tmp
-      $log.debug format_log("received no valid data. ")
+      log.debug format_log("received no valid data. ")
       return false # for debug
     end
 
@@ -180,14 +184,14 @@ DESC
     # copy gz on s3 to redshift
     s3_uri = "s3://#{@s3_bucket}/#{s3path}"
     sql = @copy_sql_template % s3_uri
-    $log.debug format_log("start copying. s3_uri=#{s3_uri}")
+    log.debug format_log("start copying. s3_uri=#{s3_uri}")
 
     begin
       @redshift_connection.exec(sql)
-      $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
+      log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue RedshiftError => e
       if e.to_s =~ IGNORE_REDSHIFT_ERROR_REGEXP
-        $log.error format_log("failed to copy data into redshift due to load error. s3_uri=#{s3_uri}"), :error=>e.to_s
+        log.error format_log("failed to copy data into redshift due to load error. s3_uri=#{s3_uri}"), :error=>e.to_s
         return false # for debug
       end
       raise e
@@ -246,7 +250,7 @@ DESC
     if redshift_table_columns == nil
       raise "failed to fetch the redshift table definition."
     elsif redshift_table_columns.empty?
-      $log.warn format_log("no table on redshift. table_name=#{@table_name_with_schema}")
+      log.warn format_log("no table on redshift. table_name=#{@table_name_with_schema}")
       return nil
     end
 
@@ -270,8 +274,8 @@ DESC
           gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
         rescue => e
           text = record.is_a?(Hash) ? record[@record_log_tag] : record
-          $log.error format_log("failed to create table text from #{@file_type}. text=(#{text})"), :error=>e.to_s
-          $log.error_backtrace
+          log.error format_log("failed to create table text from #{@file_type}. text=(#{text})"), :error=>e.to_s
+          log.error_backtrace
         end
       end
       return nil unless gzw.pos > 0
@@ -297,7 +301,7 @@ DESC
 
     JSON.parse(json_text)
   rescue => e
-    $log.warn format_log("failed to parse json. "), :error => e.to_s
+    log.warn format_log("failed to parse json. "), :error => e.to_s
     nil
   end
 
@@ -308,7 +312,7 @@ DESC
     val_list = redshift_table_columns.collect {|cn| hash[cn]}
 
     if val_list.all?{|v| v.nil?}
-      $log.warn format_log("no data match for table columns on redshift. data=#{hash} table_columns=#{redshift_table_columns}")
+      log.warn format_log("no data match for table columns on redshift. data=#{hash} table_columns=#{redshift_table_columns}")
       return ""
     end
 
