@@ -132,7 +132,7 @@ DESC
       }
     end
     options[:endpoint] = @s3_endpoint if @s3_endpoint
-    @s3 = AWS::S3::Client.new(options)
+    @s3 = Aws::S3::Client.new(options)
     @bucket = @s3.bucket(@s3_bucket)
     @redshift_connection = RedshiftConnection.new(@db_conf)
   end
